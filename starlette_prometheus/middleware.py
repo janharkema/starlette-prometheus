@@ -9,6 +9,12 @@ from starlette.routing import Match
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 from starlette.types import ASGIApp
 
+try:
+    from fastapi.routing import iter_route_contexts as _iter_route_contexts
+except ImportError:
+    def _iter_route_contexts(routes):
+        return routes
+
 REQUESTS = Counter(
     "starlette_requests_total", "Total count of requests by method and path.", ["method", "path_template"]
 )
@@ -69,10 +75,11 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def get_path_template(request: Request) -> Tuple[str, bool]:
-        for route in request.app.routes:
-            match, child_scope = route.matches(request.scope)
+        for route in _iter_route_contexts(request.app.routes):
+            match, _ = route.matches(request.scope)
             if match == Match.FULL:
-                return route.path, True
+                path = getattr(route, "path_format", None) or getattr(route, "path", None)
+                return path or request.url.path, True
 
         return request.url.path, False
 
